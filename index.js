@@ -49,6 +49,21 @@ CloudWatchStream.prototype._writeLogs = function _writeLogs() {
     obj.cloudwatch.putLogEvents(log, function (err, res) {
       if (err) {
         if (err.retryable) return setTimeout(writeLog, obj.writeInterval);
+        if (err.code == "DataAlreadyAcceptedException") {
+          // Retry using new sequenceToken provided in error response
+          log.sequenceToken = err.message.split(": ")[1];
+            obj.cloudwatch.putLogEvents(log, function (err, res) {
+                if (err) {
+                    if (err.retryable) return setTimeout(writeLog, obj.writeInterval);
+                    return obj._error(err);
+                }
+                obj.sequenceToken = res.nextSequenceToken;
+                if (obj.queuedLogs.length) {
+                    return setTimeout(obj._writeLogs.bind(obj), obj.writeInterval);
+                }
+                obj.writeQueued = false;
+            });
+        }
         return obj._error(err);
       }
       obj.sequenceToken = res.nextSequenceToken;
